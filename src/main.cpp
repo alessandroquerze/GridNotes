@@ -794,9 +794,9 @@ int WINAPI wWinMain(HINSTANCE hInstance, HINSTANCE, PWSTR, int nCmdShow) {
 
  
     HWND hwnd = CreateWindowExW(
-        0,
+        WS_EX_TOOLWINDOW,
         L"GridNotesMain",
-        L"testFFFF",
+        L"testFileGrid",
        // WS_OVERLAPPEDWINDOW,
        WS_POPUP, 
        CW_USEDEFAULT,
