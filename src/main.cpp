@@ -1,9 +1,7 @@
 #include <windows.h>
-#include <windowsx.h>
 #include <shlobj.h>
 #include <algorithm>
 #include <cmath>
-#include <cwctype>
 #include <fstream>
 #include <sstream>
 #include <string>
@@ -187,8 +185,7 @@ std::vector<Tile> ExtractTiles(const std::wstring& src) {
 }
 
 void SaveState() {
-    const std::wstring statePath = GetStatePath();
-    std::wofstream out(statePath.c_str());
+    std::wofstream out(GetStatePath());
     if (!out) return;
 
     out << L"{\n";
@@ -211,8 +208,7 @@ void SaveState() {
 void LoadState() {
     g_state = AppState{};
 
-    const std::wstring statePath = GetStatePath();
-    std::wifstream in(statePath.c_str());
+    std::wifstream in(GetStatePath());
     if (!in) return;
 
     std::wstringstream buffer;
@@ -227,11 +223,8 @@ void LoadState() {
 }
 
 void CreateDefault2x2(RECT rcBoard) {
-    const int boardW = static_cast<int>(rcBoard.right - rcBoard.left);
-    const int boardH = static_cast<int>(rcBoard.bottom - rcBoard.top);
-    const int cell = std::max(16, g_state.cellSize);
-    const int cellsX = std::max(2, boardW / cell);
-    const int cellsY = std::max(2, boardH / cell);
+    const int cellsX = std::max(2, (rcBoard.right - rcBoard.left) / std::max(16, g_state.cellSize));
+    const int cellsY = std::max(2, (rcBoard.bottom - rcBoard.top) / std::max(16, g_state.cellSize));
     const int halfX = cellsX / 2;
     const int halfY = cellsY / 2;
 
