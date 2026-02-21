@@ -1,0 +1,606 @@
+﻿using System.Diagnostics;
+using System.Windows;
+using System.Windows.Controls;
+using System.Windows.Controls.Primitives;
+using System.Windows.Input;
+using System.Windows.Media;
+
+namespace GridNotes;
+
+public partial class MainWindow : Window
+{
+    private const string AppName = "GridNotes";
+
+    private AppState _state = new();
+    private readonly Debouncer _saveDebounce = new(TimeSpan.FromMilliseconds(500));
+
+    private bool _editLayoutEnabled;
+    private bool _isResizing;
+    public MainWindow()
+    {
+        InitializeComponent();
+
+        Loaded += OnLoaded;
+        Closing += OnClosing;
+        StartWithWindowsCheck.Checked += (_, _) => SetStartup(true);
+        StartWithWindowsCheck.Unchecked += (_, _) => SetStartup(false);
+
+        EditLayoutToggle.Checked += (_, _) => { _editLayoutEnabled = true; RenderAll(); SaveSoon(); };
+        EditLayoutToggle.Unchecked += (_, _) => { _editLayoutEnabled = false; RenderAll(); SaveSoon(); };
+
+        // CellSize via mouse: Ctrl + rotellina
+        //PreviewMouseWheel += OnPreviewMouseWheel;
+    }
+
+    private void OnLoaded(object sender, RoutedEventArgs e)
+    {
+        Console.WriteLine($"Window: {ActualWidth} x {ActualHeight}");
+Console.WriteLine($"Board: {Board.ActualWidth} x {Board.ActualHeight}");
+        _state = Storage.Load();
+
+        // se non c'è nulla, crea una griglia 2x2
+        if (_state.Tiles.Count == 0)
+            CreateDefault2x2();
+
+        bool regEnabled = Startup.IsEnabled(AppName);
+        bool shouldEnable = _state.StartWithWindows || regEnabled;
+        StartWithWindowsCheck.IsChecked = shouldEnable;
+        _state.StartWithWindows = shouldEnable;
+
+        _editLayoutEnabled = false;
+        EditLayoutToggle.IsChecked = false;
+
+        // posizionamento su 2° schermo
+        WindowPlacer.PlaceOnSecondScreenCenter(this, _state.WindowWidth, _state.WindowHeight);
+
+        RenderAll();
+        SaveSoon();
+    }
+
+    private int BoardCellsX => Math.Max(1, (int)Math.Floor(Board.ActualWidth / Cell));
+private int BoardCellsY => Math.Max(1, (int)Math.Floor(Board.ActualHeight / Cell));
+
+private void ClampMoveToBoard(Tile t)
+{
+    // mantiene W/H (già validi) e clampa solo posizione
+    t.X = Math.Max(0, Math.Min(t.X, BoardCellsX - t.W));
+    t.Y = Math.Max(0, Math.Min(t.Y, BoardCellsY - t.H));
+}
+
+private void ClampResizeRightToBoard(Tile t)
+{
+    // ancora a sinistra: NON modificare X, clampa solo W
+    t.W = Math.Max(1, Math.Min(t.W, BoardCellsX - t.X));
+}
+
+private void ClampResizeBottomToBoard(Tile t)
+{
+    // ancora in alto: NON modificare Y, clampa solo H
+    t.H = Math.Max(1, Math.Min(t.H, BoardCellsY - t.Y));
+}
+
+private void ClampResizeTopToBoard(Tile t, int bottomY)
+{
+    // ancora in basso: mantieni fisso il bordo inferiore (bottomY), modifica solo Y e H
+    // bottomY è in coordinate "celle" e rappresenta Y+H prima del drag.
+    int maxBottom = Math.Max(1, Math.Min(bottomY, BoardCellsY));
+
+    // Y non può andare sotto 0 e non può superare (maxBottom - 1) altrimenti H diventerebbe 0
+    t.Y = Math.Max(0, Math.Min(t.Y, maxBottom - 1));
+
+    // H diventa la distanza tra bottom ancorato e il nuovo Y
+    t.H = Math.Max(1, maxBottom - t.Y);
+}
+
+private void ClampResizeBottomRightToBoard(Tile t)
+{
+    // ancora in alto-sinistra: NON modificare X/Y, clampa W/H
+    t.W = Math.Max(1, Math.Min(t.W, BoardCellsX - t.X));
+    t.H = Math.Max(1, Math.Min(t.H, BoardCellsY - t.Y));
+}
+
+private void OnClosing(object? sender, System.ComponentModel.CancelEventArgs e)
+    {
+        _state.WindowWidth = (int)Width;
+        _state.WindowHeight = (int)Height;
+        SaveNow();
+    }
+
+    private void OnPreviewMouseWheel(object sender, MouseWheelEventArgs e)
+    {
+        return; // disabilitato
+
+        if ((Keyboard.Modifiers & ModifierKeys.Control) == 0)
+            return;
+
+        // regola CellSize a scatti
+        int step = 4;
+        int min = 16;
+        int max = 128;
+
+        int next = _state.CellSize + (e.Delta > 0 ? step : -step);
+        next = Math.Max(min, Math.Min(max, next));
+
+        if (next != _state.CellSize)
+        {
+            _state.CellSize = next;
+            RenderAll();
+            SaveSoon();
+        }
+
+        e.Handled = true;
+    }
+private Thumb CreateEdgeThumbLeft(Tile t, FrameworkElement container)
+{
+    var thumb = new Thumb
+    {
+        Width = 8,
+        HorizontalAlignment = System.Windows.HorizontalAlignment.Left,
+        VerticalAlignment = System.Windows.VerticalAlignment.Stretch,
+        Cursor = System.Windows.Input.Cursors.SizeWE,
+        Opacity = 0.25,
+        Tag = t
+    };
+
+    thumb.DragStarted += (_, _) =>
+    {
+        _isResizing = true;
+        thumb.Opacity = 0.6;
+    };
+
+    thumb.DragCompleted += (_, _) =>
+    {
+        _isResizing = false;
+        thumb.Opacity = 0.25;
+    };
+
+    thumb.DragDelta += (_, e) =>
+    {
+        int d = SnapToCells(e.HorizontalChange);
+        if (d == 0) return;
+
+        // Ancora a destra → il bordo destro resta fisso
+        int right = t.X + t.W;
+
+        t.X += d;
+        t.W -= d;
+
+        ClampResizeLeftToBoard(t, right);
+
+        ApplyTileRect(container, t);
+        SaveSoon();
+    };
+
+    return thumb;
+}
+private void ClampResizeLeftToBoard(Tile t, int fixedRight)
+{
+    int maxX = BoardCellsX;
+
+    // Limite sinistro assoluto
+    if (t.X < 0)
+        t.X = 0;
+
+    // Ricalcola larghezza mantenendo il bordo destro fisso
+    t.W = fixedRight - t.X;
+
+    // Min size
+    if (t.W < 1)
+    {
+        t.W = 1;
+        t.X = fixedRight - 1;
+    }
+
+    // Limite destro (sicurezza)
+    if (fixedRight > maxX)
+    {
+        t.X = maxX - t.W;
+    }
+}
+    private void SetStartup(bool enabled)
+    {
+        _state.StartWithWindows = enabled;
+
+        string exe = Process.GetCurrentProcess().MainModule?.FileName ?? "";
+        if (!string.IsNullOrWhiteSpace(exe))
+            Startup.SetEnabled(AppName, exe, enabled);
+
+        SaveSoon();
+    }
+
+    private void SaveSoon() => _saveDebounce.Run(SaveNow);
+
+    private void SaveNow()
+    {
+        try { Storage.Save(_state); }
+        catch { }
+    }
+
+    private int Cell => Math.Max(16, _state.CellSize);
+    private double ToPx(int cells) => cells * Cell;
+    private int SnapToCells(double px) => (int)Math.Round(px / Cell);
+
+    private void CreateDefault2x2()
+{
+    int totalCellsX = Math.Max(2, (int)Math.Floor(Board.ActualWidth / Cell));
+    int totalCellsY = Math.Max(2, (int)Math.Floor(Board.ActualHeight / Cell));
+
+    int halfX = totalCellsX / 2;
+    int halfY = totalCellsY / 2;
+
+    _state.Tiles.Clear();
+
+    _state.Tiles.Add(new Tile { X = 0,      Y = 0,      W = halfX, H = halfY, Text = "" });
+    _state.Tiles.Add(new Tile { X = halfX,  Y = 0,      W = totalCellsX - halfX, H = halfY, Text = "" });
+    _state.Tiles.Add(new Tile { X = 0,      Y = halfY,  W = halfX, H = totalCellsY - halfY, Text = "" });
+    _state.Tiles.Add(new Tile { X = halfX,  Y = halfY,  W = totalCellsX - halfX, H = totalCellsY - halfY, Text = "" });
+}
+
+    private void RenderAll()
+    {
+        Board.Children.Clear();
+
+        int maxX = 0, maxY = 0;
+        foreach (var t in _state.Tiles)
+        {
+            maxX = Math.Max(maxX, t.X + t.W);
+            maxY = Math.Max(maxY, t.Y + t.H);
+        }
+
+        foreach (var t in _state.Tiles)
+            Board.Children.Add(CreateTileElement(t));
+    }
+
+    private FrameworkElement CreateTileElement(Tile t)
+    {
+        var border = new Border
+        {
+            Background = new SolidColorBrush(System.Windows.Media.Color.FromRgb(26, 26, 26)),
+            BorderBrush = new SolidColorBrush(System.Windows.Media.Color.FromRgb(80, 80, 80)),
+            BorderThickness = new Thickness(1),
+            CornerRadius = new CornerRadius(0),
+            Tag = t
+        };
+
+        var grid = new Grid();
+        border.Child = grid;
+
+        var tb = new System.Windows.Controls.TextBox
+        {
+            Text = t.Text,
+           Background = System.Windows.Media.Brushes.Transparent,
+Foreground = System.Windows.Media.Brushes.White,
+            BorderThickness = new Thickness(0),
+            AcceptsReturn = true,
+            TextWrapping = TextWrapping.Wrap,
+            VerticalScrollBarVisibility = ScrollBarVisibility.Auto,
+            Padding = new Thickness(10),
+            Tag = t
+        };
+
+        tb.TextChanged += (_, _) =>
+        {
+            t.Text = tb.Text;
+            SaveSoon();
+        };
+
+        grid.Children.Add(tb);
+
+
+// dopo: grid.Children.Add(tb);
+
+var menuOverlay = new System.Windows.Controls.Button
+{
+    Background = System.Windows.Media.Brushes.Transparent,
+    BorderThickness = new Thickness(0),
+    Padding = new Thickness(0),
+    HorizontalAlignment = System.Windows.HorizontalAlignment.Stretch,
+    VerticalAlignment = System.Windows.VerticalAlignment.Stretch,
+
+    // lascia fuori lo spazio dei thumbs: regola questi valori in base ai tuoi
+    // esempio: thumbs 8px sui bordi + corner 14px con margin 6
+    Margin = new Thickness(
+        left: 8,
+        top: 8,
+        right: 8 + 14 + 6,
+        bottom: 8 + 14 + 6
+    ),
+
+    Focusable = false
+};
+
+// al click apri il context menu del Border (o assegnalo al bottone)
+menuOverlay.Click += (_, __) =>
+{
+    if (border.ContextMenu is null) return;
+    border.ContextMenu.PlacementTarget = border;
+    border.ContextMenu.IsOpen = true;
+};
+
+
+        // Resize handles SOLO se edit layout è ON
+        if (_editLayoutEnabled)
+        {
+            // top edge
+            grid.Children.Add(CreateEdgeThumbTop(t, border));
+            // right edge
+            grid.Children.Add(CreateEdgeThumbRight(t, border));
+            // bottom edge
+            grid.Children.Add(CreateEdgeThumbBottom(t, border));
+            // bottom-right corner
+            grid.Children.Add(CreateCornerThumb(t, border));
+
+            grid.Children.Add(CreateEdgeThumbLeft(t, border));
+        }
+
+// mettilo sopra la textbox, ma sotto ai thumbs (che aggiungi dopo)
+System.Windows.Controls.Panel.SetZIndex(menuOverlay, 5);
+grid.Children.Add(menuOverlay);
+        // Context menu: split 2/4 + reset 2x2
+        var menu = new ContextMenu();
+
+        var splitV = new MenuItem { Header = "Split in 2 (verticale)" };
+        splitV.Click += (_, _) => Split2(t, vertical: true);
+        menu.Items.Add(splitV);
+
+        var splitH = new MenuItem { Header = "Split in 2 (orizzontale)" };
+        splitH.Click += (_, _) => Split2(t, vertical: false);
+        menu.Items.Add(splitH);
+
+        var split4 = new MenuItem { Header = "Split in 4 (quadranti)" };
+        split4.Click += (_, _) => Split4(t);
+        menu.Items.Add(split4);
+
+        var delete = new MenuItem { Header = "Elimina tile" };
+        delete.Click += (_, _) =>
+{
+    // Non permettere di eliminare l'ultima tile
+    if (_state.Tiles.Count <= 1)
+        return;
+
+    _state.Tiles.RemoveAll(x => x.Id == t.Id);
+
+    RenderAll();
+    SaveSoon();
+};
+
+        menu.Items.Add(delete);
+
+        menu.Items.Add(new Separator());
+
+        var reset = new MenuItem { Header = "Reset griglia 2x2" };
+        reset.Click += (_, _) =>
+        {
+            CreateDefault2x2();
+            RenderAll();
+            SaveSoon();
+        };
+        menu.Items.Add(reset);
+
+        border.ContextMenu = menu;
+
+        ApplyTileRect(border, t);
+        return border;
+    }
+
+    private Thumb CreateEdgeThumbTop(Tile t, FrameworkElement container)
+{
+    var thumb = new Thumb
+    {
+        Height = 8,
+        HorizontalAlignment = System.Windows.HorizontalAlignment.Stretch,
+        VerticalAlignment = System.Windows.VerticalAlignment.Top,
+        Cursor = System.Windows.Input.Cursors.SizeNS,
+        Opacity = 0.25,
+        Tag = t
+    };
+
+    int bottomY = 0;
+
+    thumb.DragStarted += (_, _) =>
+    {
+        _isResizing = true;
+        thumb.Opacity = 0.6;
+        bottomY = t.Y + t.H; // ancora il bordo inferiore
+    };
+
+    thumb.DragCompleted += (_, _) =>
+    {
+        _isResizing = false;
+        thumb.Opacity = 0.25;
+    };
+
+    thumb.DragDelta += (_, e) =>
+    {
+        // Trascinare verso il basso aumenta Y e riduce H; verso l'alto diminuisce Y e aumenta H
+        int dY = SnapToCells(e.VerticalChange);
+        if (dY == 0) return;
+
+        t.Y = t.Y + dY;
+
+        // Clamp direzionale: ancora in basso
+        ClampResizeTopToBoard(t, bottomY);
+
+        ApplyTileRect(container, t);
+        SaveSoon();
+    };
+
+    return thumb;
+}
+
+private Thumb CreateEdgeThumbRight(Tile t, FrameworkElement container)
+    {
+        var thumb = new Thumb
+        {
+            Width = 8,
+           HorizontalAlignment = System.Windows.HorizontalAlignment.Right,
+VerticalAlignment = System.Windows.VerticalAlignment.Stretch,
+            Cursor = System.Windows.Input.Cursors.SizeWE,
+            Opacity = 0.25,
+            Tag = t
+        };
+
+        thumb.DragDelta += (_, e) =>
+        {
+            int dW = SnapToCells(e.HorizontalChange);
+            if (dW != 0)
+            {
+                t.W = Math.Max(1, t.W + dW);
+                ClampResizeRightToBoard(t);
+                ApplyTileRect(container, t);
+                SaveSoon();
+            }
+        };
+
+        thumb.DragStarted += (_, _) => { _isResizing = true; thumb.Opacity = 0.6; };
+        thumb.DragCompleted += (_, _) => { _isResizing = false; thumb.Opacity = 0.25; };
+
+        return thumb;
+    }
+
+    private Thumb CreateEdgeThumbBottom(Tile t, FrameworkElement container)
+    {
+        var thumb = new Thumb
+        {
+            Height = 8,
+           HorizontalAlignment = System.Windows.HorizontalAlignment.Stretch,
+VerticalAlignment = System.Windows.VerticalAlignment.Bottom,
+            Cursor = System.Windows.Input.Cursors.SizeNS,
+            Opacity = 0.25,
+            Tag = t
+        };
+
+        thumb.DragDelta += (_, e) =>
+        {
+            int dH = SnapToCells(e.VerticalChange);
+            if (dH != 0)
+            {
+                t.H = Math.Max(1, t.H + dH);
+                ClampResizeBottomToBoard(t);
+                ApplyTileRect(container, t);
+                SaveSoon();
+            }
+        };
+
+        thumb.DragStarted += (_, _) => { _isResizing = true; thumb.Opacity = 0.6; };
+        thumb.DragCompleted += (_, _) => { _isResizing = false; thumb.Opacity = 0.25; };
+
+        return thumb;
+    }
+
+    private Thumb CreateCornerThumb(Tile t, FrameworkElement container)
+    {
+        var thumb = new Thumb
+        {
+            Width = 14,
+            Height = 14,
+            HorizontalAlignment = System.Windows.HorizontalAlignment.Right,
+VerticalAlignment = System.Windows.VerticalAlignment.Bottom,
+            Cursor = System.Windows.Input.Cursors.SizeNWSE,
+            Margin = new Thickness(0, 0, 6, 6),
+            Opacity = 0.6,
+            Tag = t
+        };
+
+        thumb.Template = BuildThumbTemplate();
+
+        
+
+        thumb.DragStarted += (_, _) => _isResizing = true;
+        thumb.DragCompleted += (_, _) => _isResizing = false;
+thumb.DragDelta += (_, e) =>
+        {
+            int dW = SnapToCells(e.HorizontalChange);
+            int dH = SnapToCells(e.VerticalChange);
+
+            bool changed = false;
+            if (dW != 0) { t.W = Math.Max(1, t.W + dW); changed = true; }
+            if (dH != 0) { t.H = Math.Max(1, t.H + dH); changed = true; }
+
+            if (changed)
+            {
+                ClampResizeBottomRightToBoard(t);
+                ApplyTileRect(container, t);
+                SaveSoon();
+            }
+        };
+
+        return thumb;
+    }
+
+    private ControlTemplate BuildThumbTemplate()
+    {
+        var factory = new FrameworkElementFactory(typeof(Border));
+        factory.SetValue(Border.BackgroundProperty, new SolidColorBrush(System.Windows.Media.Color.FromRgb(120, 120, 120)));
+        factory.SetValue(Border.CornerRadiusProperty, new CornerRadius(4));
+        factory.SetValue(Border.OpacityProperty, 0.9);
+        return new ControlTemplate(typeof(Thumb)) { VisualTree = factory };
+    }
+
+    private void ApplyTileRect(FrameworkElement el, Tile t)
+    {
+        Canvas.SetLeft(el, ToPx(t.X));
+        Canvas.SetTop(el, ToPx(t.Y));
+        el.Width = ToPx(t.W);
+        el.Height = ToPx(t.H);
+    }
+
+    private void Split2(Tile t, bool vertical)
+    {
+        if (vertical)
+        {
+            if (t.W < 2) return;
+
+            int w1 = t.W / 2;
+            int w2 = t.W - w1;
+
+            var a = new Tile { X = t.X, Y = t.Y, W = w1, H = t.H, Text = t.Text };
+            var b = new Tile { X = t.X + w1, Y = t.Y, W = w2, H = t.H, Text = "" };
+
+            ReplaceTile(t, a, b);
+            return;
+        }
+        else
+        {
+            if (t.H < 2) return;
+
+            int h1 = t.H / 2;
+            int h2 = t.H - h1;
+
+            var a = new Tile { X = t.X, Y = t.Y, W = t.W, H = h1, Text = t.Text };
+            var b = new Tile { X = t.X, Y = t.Y + h1, W = t.W, H = h2, Text = "" };
+
+            ReplaceTile(t, a, b);
+            return;
+        }
+    }
+
+    private void Split4(Tile t)
+    {
+        if (t.W < 2 || t.H < 2) return;
+
+        int w1 = t.W / 2;
+        int w2 = t.W - w1;
+        int h1 = t.H / 2;
+        int h2 = t.H - h1;
+
+        var a = new Tile { X = t.X,      Y = t.Y,      W = w1, H = h1, Text = t.Text };
+        var b = new Tile { X = t.X + w1, Y = t.Y,      W = w2, H = h1, Text = "" };
+        var c = new Tile { X = t.X,      Y = t.Y + h1, W = w1, H = h2, Text = "" };
+        var d = new Tile { X = t.X + w1, Y = t.Y + h1, W = w2, H = h2, Text = "" };
+
+        _state.Tiles.RemoveAll(x => x.Id == t.Id);
+        _state.Tiles.AddRange(new[] { a, b, c, d });
+
+        RenderAll();
+        SaveSoon();
+    }
+
+    private void ReplaceTile(Tile oldTile, params Tile[] newTiles)
+    {
+        _state.Tiles.RemoveAll(x => x.Id == oldTile.Id);
+        _state.Tiles.AddRange(newTiles);
+        RenderAll();
+        SaveSoon();
+    }
+}

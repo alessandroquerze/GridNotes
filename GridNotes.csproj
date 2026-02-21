@@ -1,0 +1,22 @@
+﻿<Project Sdk="Microsoft.NET.Sdk">
+
+  <PropertyGroup>
+    <OutputType>WinExe</OutputType>
+
+    <!-- Usa net8.0-windows (richiede .NET 8 SDK installato) -->
+    <TargetFramework>net8.0-windows</TargetFramework>
+
+    <!-- WPF -->
+    <UseWPF>true</UseWPF>
+
+    <!-- Necessario per System.Windows.Forms.Screen (multi-monitor) -->
+    <UseWindowsForms>true</UseWindowsForms>
+
+    <!-- Qualità -->
+    <Nullable>enable</Nullable>
+    <ImplicitUsings>enable</ImplicitUsings>
+
+    <!-- Opzionale: DPI awareness (utile su multi-monitor con scaling diverso) -->
+  </PropertyGroup>
+
+</Project>
