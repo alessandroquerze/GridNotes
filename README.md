@@ -1,23 +1,22 @@
-# GridNotes (C++)
+# GridNotes (C++ Win32)
 
-Riscrittura completa della codebase in **C++ Win32 puro**, usando controlli **EDIT** standard (non RichEdit).
+Sì: CMake non è obbligatorio.
 
-## Build
+Il progetto usa Win32 API + controlli `EDIT` standard (non RichEdit) e può essere compilato direttamente con **g++ (MinGW-w64)** su Windows.
 
-Su Windows (Developer Command Prompt):
+## Build senza CMake (consigliato)
 
-```powershell
-cmake -S . -B build -G "Ninja"
-cmake --build build
+Apri un terminale MinGW su Windows e lancia:
+
+```bash
+g++ -std=c++20 -municode -mwindows -O2 -o GridNotes.exe src/main.cpp -ladvapi32 -lshell32 -lcomctl32 -lgdi32 -luser32
 ```
 
-Eseguibile prodotto: `build/GridNotes.exe`.
+Questo produce `GridNotes.exe` nella cartella corrente.
 
 ## Note
 
-- Salvataggio stato in `%APPDATA%\\GridNotes\\state.json`
-- Persistenza in JSON di: cell size, dimensioni finestra, stato avvio automatico, lista tile
-- Tile editabili con `EDIT` multilinea
-- Menu contestuale su tile: split 2 orizzontale/verticale, split 4, elimina tile
-- Toggle `Edit layout` per ridimensionamento dai bordi
-- Toggle `Start with Windows` che aggiorna il registro (`HKCU\\Software\\Microsoft\\Windows\\CurrentVersion\\Run`)
+- Stato salvato in `%APPDATA%\\GridNotes\\state.json`
+- Persistenza JSON di impostazioni + tile
+- Toggle `Start with Windows` con registry `HKCU\\Software\\Microsoft\\Windows\\CurrentVersion\\Run`
+- Tile con `EDIT` multilinea, split 2/4, delete, resize bordi in edit mode
