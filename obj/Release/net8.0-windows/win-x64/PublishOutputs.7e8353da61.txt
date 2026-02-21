@@ -1,4 +1,0 @@
-C:\Users\querz\Desktop\roba_git\BloccoNotePersonaleBello\BloccoNotePersonale\GridNotes\bin\Release\net8.0-windows\win-x64\publish\GridNotes.exe
-C:\Users\querz\Desktop\roba_git\BloccoNotePersonaleBello\BloccoNotePersonale\GridNotes\bin\Release\net8.0-windows\win-x64\publish\GridNotes.deps.json
-C:\Users\querz\Desktop\roba_git\BloccoNotePersonaleBello\BloccoNotePersonale\GridNotes\bin\Release\net8.0-windows\win-x64\publish\GridNotes.runtimeconfig.json
-C:\Users\querz\Desktop\roba_git\BloccoNotePersonaleBello\BloccoNotePersonale\GridNotes\bin\Release\net8.0-windows\win-x64\publish\GridNotes.dll
