@@ -31,7 +31,7 @@ struct AppState {
 constexpr wchar_t kAppName[] = L"GridNotes";
 constexpr wchar_t kRunKey[] = L"Software\\Microsoft\\Windows\\CurrentVersion\\Run";
 constexpr int kToolbarHeight = 36;
-constexpr int kEditPadding = 4;
+constexpr int kEditPadding = 1;
 constexpr int kCmdEditLayout = 101;
 constexpr int kCmdStartup = 102;
 
@@ -568,6 +568,8 @@ LRESULT CALLBACK BoardProc(HWND hwnd, UINT msg, WPARAM wParam, LPARAM lParam) {
             EndPaint(hwnd, &ps);
             return 0;
         }
+        case WM_COMMAND:
+            return SendMessageW(GetParent(hwnd), msg, wParam, lParam);
     }
 
     return DefWindowProcW(hwnd, msg, wParam, lParam);
