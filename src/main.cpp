@@ -8,7 +8,8 @@
 #include <sstream>
 #include <string>
 #include <vector>
-
+#define BACKGROUND 0
+#define TILE_COLOR 26
 struct Tile {
     int x{0};
     int y{0};
@@ -540,7 +541,7 @@ LRESULT CALLBACK BoardProc(HWND hwnd, UINT msg, WPARAM wParam, LPARAM lParam) {
         }
         case WM_CTLCOLOREDIT: {
             HDC hdc = reinterpret_cast<HDC>(wParam);
-            SetBkColor(hdc, RGB(45, 45, 45));
+            SetBkColor(hdc, RGB(TILE_COLOR, TILE_COLOR, TILE_COLOR));
             SetTextColor(hdc, RGB(235, 235, 235));
             return reinterpret_cast<LRESULT>(g_editBgBrush);
         }
@@ -548,7 +549,7 @@ LRESULT CALLBACK BoardProc(HWND hwnd, UINT msg, WPARAM wParam, LPARAM lParam) {
             PAINTSTRUCT ps{};
             HDC hdc = BeginPaint(hwnd, &ps);
 
-            HBRUSH bg = CreateSolidBrush(RGB(18, 18, 18));
+            HBRUSH bg = CreateSolidBrush(RGB(BACKGROUND, BACKGROUND, BACKGROUND));
             FillRect(hdc, &ps.rcPaint, bg);
             DeleteObject(bg);
 
@@ -575,8 +576,8 @@ LRESULT CALLBACK BoardProc(HWND hwnd, UINT msg, WPARAM wParam, LPARAM lParam) {
 LRESULT CALLBACK MainProc(HWND hwnd, UINT msg, WPARAM wParam, LPARAM lParam) {
     switch (msg) {
         case WM_CREATE: {
-            g_editBgBrush = CreateSolidBrush(RGB(45, 45, 45));
-            g_toolbarBgBrush = CreateSolidBrush(RGB(0, 0, 0));
+            g_editBgBrush = CreateSolidBrush(RGB(TILE_COLOR, TILE_COLOR, TILE_COLOR));
+            g_toolbarBgBrush = CreateSolidBrush(RGB(TILE_COLOR, TILE_COLOR, TILE_COLOR));
 
             g_editToggle = CreateWindowW(
                 L"BUTTON",
