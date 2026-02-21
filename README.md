@@ -14,6 +14,14 @@ g++ -std=c++20 -municode -mwindows -O2 -o GridNotes.exe src/main.cpp -ladvapi32 
 
 Questo produce `GridNotes.exe` nella cartella corrente.
 
+## Compatibilità MinGW/MSYS2
+
+Il sorgente è stato adattato per evitare errori comuni su toolchain MinGW recenti:
+
+- apertura stream wide con `statePath.c_str()` invece di passare `std::wstring` direttamente a `wifstream/wofstream`
+- include di `windowsx.h` per `GET_X_LPARAM` / `GET_Y_LPARAM`
+- calcoli in `CreateDefault2x2` normalizzati a `int` per evitare `std::max(int, long)`
+
 ## Note
 
 - Stato salvato in `%APPDATA%\\GridNotes\\state.json`
