@@ -873,7 +873,7 @@ LRESULT CALLBACK BoardProc(HWND hwnd, UINT msg, WPARAM wParam, LPARAM lParam) {
             SetTextColor(hdc, RGB(235, 235, 235));
             return reinterpret_cast<LRESULT>(g_editBgBrush);
         }
-        case WM_PAINT: {
+        /*case WM_PAINT: {
             PAINTSTRUCT ps{};
             HDC hdc = BeginPaint(hwnd, &ps);
 
@@ -892,11 +892,52 @@ LRESULT CALLBACK BoardProc(HWND hwnd, UINT msg, WPARAM wParam, LPARAM lParam) {
             }
 
                        // Draw resize handles in Edit Layout mode (always visible)\n            if (g_state.editLayout) {\n                const int tpx = kResizeHandlePx;\n                HBRUSH handleBrush = CreateSolidBrush(RGB(140, 140, 140));\n\n                for (const auto& tile : g_state.tiles) {\n                    RECT r{ToPx(tile.x), ToPx(tile.y), ToPx(tile.x + tile.w), ToPx(tile.y + tile.h)};\n\n                    RECT left{r.left, r.top, r.left + tpx, r.bottom};\n                    RECT right{r.right - tpx, r.top, r.right, r.bottom};\n                    RECT top{r.left, r.top, r.right, r.top + tpx};\n                    RECT bottom{r.left, r.bottom - tpx, r.right, r.bottom};\n\n                    FillRect(hdc, &left, handleBrush);\n                    FillRect(hdc, &right, handleBrush);\n                    FillRect(hdc, &top, handleBrush);\n                    FillRect(hdc, &bottom, handleBrush);\n                }\n\n                DeleteObject(handleBrush);\n            }\nSelectObject(hdc, oldBrush);
-            SelectObject(hdc, oldPen);
+
+                       SelectObject(hdc, oldPen);
             DeleteObject(pen);
             EndPaint(hwnd, &ps);
             return 0;
-        }
+        }*/
+       //old, la versione sopra causava flickering dei bordi
+       case WM_PAINT: {
+    PAINTSTRUCT ps{};
+    HDC hdc = BeginPaint(hwnd, &ps);
+
+    RECT rc{};
+    GetClientRect(hwnd, &rc);
+
+    HDC mem = CreateCompatibleDC(hdc);
+    HBITMAP bmp = CreateCompatibleBitmap(hdc, rc.right - rc.left, rc.bottom - rc.top);
+    HGDIOBJ oldBmp = SelectObject(mem, bmp);
+
+    // --- disegna tutto su "mem" invece che su hdc ---
+    HBRUSH bg = CreateSolidBrush(RGB(BACKGROUND, BACKGROUND, BACKGROUND));
+    FillRect(mem, &rc, bg);
+    DeleteObject(bg);
+
+    HPEN pen = CreatePen(PS_SOLID, 1, RGB(80, 80, 80));
+    HGDIOBJ oldPen = SelectObject(mem, pen);
+    HBRUSH hollow = (HBRUSH)GetStockObject(HOLLOW_BRUSH);
+    HGDIOBJ oldBrush = SelectObject(mem, hollow);
+
+    for (const auto& t : g_state.tiles) {
+        Rectangle(mem, ToPx(t.x), ToPx(t.y), ToPx(t.x + t.w), ToPx(t.y + t.h));
+    }
+
+    SelectObject(mem, oldBrush);
+    SelectObject(mem, oldPen);
+    DeleteObject(pen);
+
+    // copia su schermo in un colpo solo
+    BitBlt(hdc, 0, 0, rc.right - rc.left, rc.bottom - rc.top, mem, 0, 0, SRCCOPY);
+
+    SelectObject(mem, oldBmp);
+    DeleteObject(bmp);
+    DeleteDC(mem);
+
+    EndPaint(hwnd, &ps);
+    return 0;
+}
         case WM_COMMAND:
             return SendMessageW(GetParent(hwnd), msg, wParam, lParam);
         case WM_ERASEBKGND:
