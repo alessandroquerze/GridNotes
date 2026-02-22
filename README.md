@@ -1,30 +1,15 @@
-# GridNotes (C++ Win32)
+progetto con win32 + EDIT (no richedit)
 
-Sì: CMake non è obbligatorio.
 
-Il progetto usa Win32 API + controlli `EDIT` standard (non RichEdit) e può essere compilato direttamente con **g++ (MinGW-w64)** su Windows.
 
-## Build senza CMake (consigliato)
+Stato salvato in `%APPDATA%\\GridNotes\\state.json`
 
-Apri un terminale MinGW su Windows e lancia:
 
-```bash
+compile lines:
+
+se attivato task scheduler(sconsigliato): 
+g++ -std=c++20 -municode -mwindows -O2 -o GridNotes.exe src/main.cpp src/startup.cpp -ladvapi32 -lshell32 -lcomctl32 -lgdi32 -luser32 -lole32 -loleaut32 -luuid
+
+se con registro run:
+
 g++ -std=c++20 -municode -mwindows -O2 -o GridNotes.exe src/main.cpp -ladvapi32 -lshell32 -lcomctl32 -lgdi32 -luser32
-```
-
-Questo produce `GridNotes.exe` nella cartella corrente.
-
-## Compatibilità MinGW/MSYS2
-
-Il sorgente è stato adattato per evitare errori comuni su toolchain MinGW recenti:
-
-- apertura stream wide con `statePath.c_str()` invece di passare `std::wstring` direttamente a `wifstream/wofstream`
-- include di `windowsx.h` per `GET_X_LPARAM` / `GET_Y_LPARAM`
-- calcoli in `CreateDefault2x2` normalizzati a `int` per evitare `std::max(int, long)`
-
-## Note
-
-- Stato salvato in `%APPDATA%\\GridNotes\\state.json`
-- Persistenza JSON di impostazioni + tile
-- Toggle `Start with Windows` con registry `HKCU\\Software\\Microsoft\\Windows\\CurrentVersion\\Run`
-- Tile con `EDIT` multilinea, split 2/4, delete, resize bordi in edit mode

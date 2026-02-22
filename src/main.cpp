@@ -12,7 +12,7 @@
 #define TILE_COLOR 26
 #include <windows.h>
 #include <vector>
-#include "startup.h"
+//#include "startup.h"
 
 static BOOL CALLBACK EnumMonitorsProc(HMONITOR hMon, HDC, LPRECT, LPARAM lParam)
 {
@@ -181,7 +181,7 @@ bool IsStartupEnabled() {
     RegCloseKey(key);
     return result == ERROR_SUCCESS;
 }
-/*
+/*commenta questa funzione se vuoi usare startup.h e il task scheduler (costo di circa 90kb sull'exe)*/
 void SetStartup(bool enabled) {
     HKEY key{};
     if (RegOpenKeyExW(HKEY_CURRENT_USER, kRunKey, 0, KEY_SET_VALUE, &key) != ERROR_SUCCESS) return;
@@ -194,7 +194,7 @@ void SetStartup(bool enabled) {
         RegDeleteValueW(key, kAppName);
     }
     RegCloseKey(key);
-}*/
+}
 
 int ExtractJsonInt(const std::wstring& src, const std::wstring& key, int fallback) {
     const std::wstring token = L"\"" + key + L"\":";
