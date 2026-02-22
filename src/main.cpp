@@ -10,10 +10,22 @@
 #include <vector>
 #define BACKGROUND 0
 #define TILE_COLOR 26
-#include <windows.h>
-#include <vector>
+
 //#include "startup.h"
 
+HFONT g_bigFont = nullptr;
+void CreateGlobalFont()
+{
+    if (g_bigFont)
+        return;
+
+    LOGFONT lf{};
+    GetObject(GetStockObject(DEFAULT_GUI_FONT), sizeof(lf), &lf);
+
+    lf.lfHeight = (LONG)(lf.lfHeight * 1.6);
+
+    g_bigFont = CreateFontIndirect(&lf);
+}
 static BOOL CALLBACK EnumMonitorsProc(HMONITOR hMon, HDC, LPRECT, LPARAM lParam)
 {
     auto* v = reinterpret_cast<std::vector<HMONITOR>*>(lParam);
@@ -454,7 +466,7 @@ void ShowTileContextMenu(HWND owner, int idx, POINT screenPt) {
         SaveState();
     }
 }
-
+/*
 LRESULT CALLBACK EditProc(HWND hwnd, UINT msg, WPARAM wParam, LPARAM lParam) {
     if (msg == WM_CONTEXTMENU) {
         int idx = FindTileIndexByEdit(hwnd);
@@ -469,6 +481,107 @@ LRESULT CALLBACK EditProc(HWND hwnd, UINT msg, WPARAM wParam, LPARAM lParam) {
         return 0;
     }
 
+    return CallWindowProcW(g_defaultEditProc, hwnd, msg, wParam, lParam);
+}*/
+static bool IsWordChar(wchar_t c) {
+    return std::iswalnum((wint_t)c) || c == L'_';
+}
+static void DoCtrlBackspace(HWND hEdit)
+{
+    DWORD sel = (DWORD)SendMessageW(hEdit, EM_GETSEL, 0, 0);
+    int start = LOWORD(sel);
+    int end   = HIWORD(sel);
+
+    // Se c'è selezione, Backspace cancella la selezione
+    if (start != end) {
+        SendMessageW(hEdit, EM_REPLACESEL, TRUE, (LPARAM)L"");
+        return;
+    }
+
+    if (start <= 0) return;
+
+    const int len = GetWindowTextLengthW(hEdit);
+    if (len <= 0) return;
+
+   // std::wstring text;
+    //text.resize(len);
+    //old?
+    std::wstring text(len, L'\0');
+    GetWindowTextW(hEdit, text.data(), len + 1);
+
+    int i = start;
+
+    // 1) Salta gli spazi a SINISTRA del cursore
+    while (i > 0 && std::iswspace((wint_t)text[i - 1])) i--;
+
+    // 2) Cancella la "parola" (alfanumerico/underscore) oppure blocco di simboli
+    if (i > 0) {
+        if (IsWordChar(text[i - 1])) {
+            while (i > 0 && IsWordChar(text[i - 1])) i--;
+        } else {
+            // punteggiatura/simboli: elimina fino allo spazio precedente
+            while (i > 0 && !std::iswspace((wint_t)text[i - 1])) i--;
+        }
+    }
+
+    // 3) (facoltativo ma tipico) cancella anche gli spazi subito PRIMA della parola
+    // (questa riga rende l'effetto più "aggressivo"; se non lo vuoi, commentala)
+    while (i > 0 && std::iswspace((wint_t)text[i - 1])) i--;
+
+    // Cancella [i, start)
+        SendMessageW(hEdit, WM_SETREDRAW, FALSE, 0);
+    SendMessageW(hEdit, EM_SETSEL, i, start);
+    SendMessageW(hEdit, EM_REPLACESEL, TRUE, (LPARAM)L"");
+        SendMessageW(hEdit, WM_SETREDRAW, TRUE, 0);
+        //InvalidateRect(hEdit, nullptr, TRUE); //riga suggerita ma disattivata perchè non ritengo attualmente necessaria
+
+}
+LRESULT CALLBACK EditProc(HWND hwnd, UINT msg, WPARAM wParam, LPARAM lParam)
+{
+    switch (msg)
+    {
+        case WM_CHAR:{
+ // Sopprimi il carattere generato da Ctrl+Backspace / Ctrl+Delete
+    if (GetKeyState(VK_CONTROL) & 0x8000)
+    {
+        // 0x7F = DEL (il tuo ""), 0x08 = BS (backspace)
+        if (wParam == 0x7F || wParam == 0x08)
+            return 0;
+    }
+    break;
+        }
+   
+    case WM_KEYDOWN:
+        if (wParam == VK_BACK && (GetKeyState(VK_CONTROL) & 0x8000))
+        {
+            DoCtrlBackspace(hwnd);
+            return 0; // consumato
+        }
+        break;
+
+    case WM_CONTEXTMENU:
+    {
+        int idx = FindTileIndexByEdit(hwnd);
+
+        POINT screenPt{ GET_X_LPARAM(lParam), GET_Y_LPARAM(lParam) };
+
+        // Distinzione corretta: menu da tastiera
+        if (lParam == (LPARAM)-1)
+        {
+            RECT rc{};
+            GetWindowRect(hwnd, &rc);
+            screenPt.x = rc.left + 12;
+            screenPt.y = rc.top + 12;
+        }
+
+        ShowTileContextMenu(g_board ? g_board : hwnd, idx, screenPt);
+        return 0; // consumato
+    }
+
+    }
+    
+
+    // default: lascia gestire alla vecchia proc
     return CallWindowProcW(g_defaultEditProc, hwnd, msg, wParam, lParam);
 }
 
@@ -506,7 +619,7 @@ void DestroyTileWindows() {
     }
 }
 
-void LayoutTiles() {
+/*void LayoutTiles() {
     for (auto& t : g_state.tiles) {
         if (!t.edit) {
             t.edit = CreateWindowExW(
@@ -547,6 +660,57 @@ SendMessageW(t.edit, WM_SETFONT, (WPARAM)bigFont, TRUE);
 }
 
     InvalidateRect(g_board, nullptr, TRUE);
+}*/
+//old, without batching ^^^^
+
+
+void LayoutTiles() {
+    // 1) Crea le edit mancanti (come fai ora)
+    for (auto& t : g_state.tiles) {
+        if (!t.edit) {
+            t.edit = CreateWindowExW(
+                0, L"EDIT", t.text.c_str(),
+                WS_CHILD | WS_VISIBLE | ES_LEFT | ES_MULTILINE | ES_WANTRETURN,
+                0, 0, 10, 10,
+                g_board, nullptr, GetModuleHandleW(nullptr), nullptr);
+
+            if (!g_defaultEditProc) {
+                g_defaultEditProc = reinterpret_cast<WNDPROC>(
+                    GetWindowLongPtrW(t.edit, GWLP_WNDPROC));
+            }
+            SetWindowLongPtrW(t.edit, GWLP_WNDPROC, reinterpret_cast<LONG_PTR>(EditProc));
+
+            SendMessageW(t.edit, WM_SETFONT, (WPARAM)g_bigFont, TRUE);
+        }
+    }
+
+    // 2) Batch delle posizioni
+    HDWP hdwp = BeginDeferWindowPos((int)g_state.tiles.size());
+    if (!hdwp) return; // fallimento raro, ma possibile
+
+    for (auto& t : g_state.tiles) {
+        const int inset = kEditPadding + (g_state.editLayout ? kResizeHandlePx : 0);
+
+        int x = ToPx(t.x) + inset;
+        int y = ToPx(t.y) + inset;
+        int w = std::max(24, ToPx(t.w) - 2 * inset);
+        int h = std::max(24, ToPx(t.h) - 2 * inset);
+
+        hdwp = DeferWindowPos(
+            hdwp,
+            t.edit,
+            nullptr,
+            x, y, w, h,
+            SWP_NOZORDER | SWP_NOACTIVATE
+        );
+
+        if (!hdwp) return; // se DeferWindowPos fallisce, hdwp diventa NULL
+    }
+
+    EndDeferWindowPos(hdwp);
+
+    // 3) Invalida senza erase (importante per flicker)
+    InvalidateRect(g_board, nullptr, FALSE);
 }
 
 int HitTestTile(POINT ptBoard, DragEdge* edge = nullptr) {
@@ -681,6 +845,7 @@ LRESULT CALLBACK BoardProc(HWND hwnd, UINT msg, WPARAM wParam, LPARAM lParam) {
 //g_state.tiles[g_dragTile].y = t.y;
 //g_state.tiles[g_dragTile].w = t.w;
 //g_state.tiles[g_dragTile].h = t.h;
+//old?
     LayoutTiles();
     break;
 }
@@ -971,6 +1136,10 @@ SetTimer(hwnd, kTimerSaveDebounce, kSaveDebounceMs, nullptr);
                 DeleteObject(g_toolbarBgBrush);
                 g_toolbarBgBrush = nullptr;
             }
+            if(g_bigFont){
+                  DeleteObject(g_toolbarBgBrush);
+                g_bigFont = nullptr;
+            }
             PostQuitMessage(0);
             return 0;
         case WM_TIMER: {
@@ -995,6 +1164,7 @@ SetTimer(hwnd, kTimerSaveDebounce, kSaveDebounceMs, nullptr);
 
 
 int WINAPI wWinMain(HINSTANCE hInstance, HINSTANCE, PWSTR, int nCmdShow) {
+    CreateGlobalFont();
     SetPriorityClass(GetCurrentProcess(), ABOVE_NORMAL_PRIORITY_CLASS);
     LoadState();
 
