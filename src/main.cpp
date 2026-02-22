@@ -350,7 +350,7 @@ if (pos != std::wstring::npos) {
         while (i < obj.size() && obj[i] != L'"') {
             raw += obj[i++];
         }
-
+        t.text = JsonUnescape(raw); //fondamentale per evitare doppi \
         t.text = raw;  // testo estratto
     }
 }
