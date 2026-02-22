@@ -92,7 +92,7 @@ constexpr wchar_t kAppName[] = L"GridNotes";
 constexpr wchar_t kRunKey[] = L"Software\\Microsoft\\Windows\\CurrentVersion\\Run";
 constexpr int kToolbarHeight = 36;
 constexpr int kEditPadding = 1;
-constexpr int kResizeHandlePx = 8; // thickness in px for resize handles AND hit-test range
+constexpr int kResizeHandlePx = 10; // thickness in px for resize handles AND hit-test range
 constexpr int kCmdEditLayout = 101;
 constexpr int kCmdStartup = 102;
 
@@ -867,7 +867,7 @@ LRESULT CALLBACK BoardProc(HWND hwnd, UINT msg, WPARAM wParam, LPARAM lParam) {
             ShowTileContextMenu(hwnd, idx, pt);
             break;
         }
-        case WM_CTLCOLOREDIT: {
+        case WM_CTLCOLOREDIT: { 
             HDC hdc = reinterpret_cast<HDC>(wParam);
             SetBkColor(hdc, RGB(TILE_COLOR, TILE_COLOR, TILE_COLOR));
             SetTextColor(hdc, RGB(235, 235, 235));
@@ -888,17 +888,19 @@ LRESULT CALLBACK BoardProc(HWND hwnd, UINT msg, WPARAM wParam, LPARAM lParam) {
             HGDIOBJ oldBrush = SelectObject(hdc, hollow);
 
             for (const auto& t : g_state.tiles) {
+                    if (t.edit) ShowWindow(t.edit, SW_HIDE);
+
                 Rectangle(hdc, ToPx(t.x), ToPx(t.y), ToPx(t.x + t.w), ToPx(t.y + t.h));
             }
 
                        // Draw resize handles in Edit Layout mode (always visible)\n            if (g_state.editLayout) {\n                const int tpx = kResizeHandlePx;\n                HBRUSH handleBrush = CreateSolidBrush(RGB(140, 140, 140));\n\n                for (const auto& tile : g_state.tiles) {\n                    RECT r{ToPx(tile.x), ToPx(tile.y), ToPx(tile.x + tile.w), ToPx(tile.y + tile.h)};\n\n                    RECT left{r.left, r.top, r.left + tpx, r.bottom};\n                    RECT right{r.right - tpx, r.top, r.right, r.bottom};\n                    RECT top{r.left, r.top, r.right, r.top + tpx};\n                    RECT bottom{r.left, r.bottom - tpx, r.right, r.bottom};\n\n                    FillRect(hdc, &left, handleBrush);\n                    FillRect(hdc, &right, handleBrush);\n                    FillRect(hdc, &top, handleBrush);\n                    FillRect(hdc, &bottom, handleBrush);\n                }\n\n                DeleteObject(handleBrush);\n            }\nSelectObject(hdc, oldBrush);
 
-                       SelectObject(hdc, oldPen);
+            SelectObject(hdc, oldPen);
             DeleteObject(pen);
             EndPaint(hwnd, &ps);
             return 0;
         }*/
-       //old, la versione sopra causava flickering dei bordi
+       //old, la versione sopra causava flickering dei bordi. MA FORSE possibile aggiustarlo senza il double buffering sotto
        case WM_PAINT: {
     PAINTSTRUCT ps{};
     HDC hdc = BeginPaint(hwnd, &ps);
@@ -908,6 +910,14 @@ LRESULT CALLBACK BoardProc(HWND hwnd, UINT msg, WPARAM wParam, LPARAM lParam) {
 
     HDC mem = CreateCompatibleDC(hdc);
     HBITMAP bmp = CreateCompatibleBitmap(hdc, rc.right - rc.left, rc.bottom - rc.top);
+   BITMAP bm{};
+//GetObject(bmp, sizeof(bm), &bm);
+
+//printf("Bitmap: %ld x %ld  %d bpp  (%ld KB)\n",
+    //   bm.bmWidth,
+      // bm.bmHeight,
+      // bm.bmBitsPixel,
+      // (bm.bmWidth * bm.bmHeight * bm.bmBitsPixel / 8) / 1024);
     HGDIOBJ oldBmp = SelectObject(mem, bmp);
 
     // --- disegna tutto su "mem" invece che su hdc ---
@@ -931,11 +941,13 @@ LRESULT CALLBACK BoardProc(HWND hwnd, UINT msg, WPARAM wParam, LPARAM lParam) {
     // copia su schermo in un colpo solo
     BitBlt(hdc, 0, 0, rc.right - rc.left, rc.bottom - rc.top, mem, 0, 0, SRCCOPY);
 
+
     SelectObject(mem, oldBmp);
     DeleteObject(bmp);
     DeleteDC(mem);
 
     EndPaint(hwnd, &ps);
+   
     return 0;
 }
         case WM_COMMAND:
@@ -1054,7 +1066,7 @@ else if(hCheck== g_startupToggle){
             wc.hCursor = LoadCursor(nullptr, IDC_ARROW);
             RegisterClassW(&wc);
 
-            g_board = CreateWindowW(L"GridNotesBoard", nullptr, WS_CHILD | WS_VISIBLE | WS_CLIPCHILDREN, 0, kToolbarHeight, 100, 100, hwnd, nullptr, GetModuleHandleW(nullptr), nullptr);
+            g_board = CreateWindowW(L"GridNotesBoard", nullptr, WS_CHILD | WS_VISIBLE | WS_CLIPCHILDREN | WS_CLIPSIBLINGS, 0, kToolbarHeight, 100, 100, hwnd, nullptr, GetModuleHandleW(nullptr), nullptr);
             return 0;
         }
         case WM_SIZE: {
