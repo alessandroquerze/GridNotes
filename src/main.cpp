@@ -72,6 +72,10 @@ struct AppState {
     std::vector<Tile> tiles;
 };
 
+static constexpr UINT_PTR kTimerSaveDebounce = 1;
+static constexpr UINT kSaveDebounceMs = 800;
+static bool g_savePending = false;
+
 constexpr wchar_t kAppName[] = L"GridNotes";
 constexpr wchar_t kRunKey[] = L"Software\\Microsoft\\Windows\\CurrentVersion\\Run";
 constexpr int kToolbarHeight = 36;
@@ -100,6 +104,86 @@ void LayoutTiles();
 void Split2(int idx, bool vertical);
 void Split4(int idx);
 bool TextFitsInEdit(HWND edit, const std::wstring& text);
+
+static inline bool Overlap1D(int a0, int a1, int b0, int b1) {
+    // intervalli half-open: [a0,a1) e [b0,b1)
+    return a0 < b1 && b0 < a1;
+}
+/* helpers per il clamping!*/
+int LimitRightEdgeCells(int idx, const Tile& orig, int desiredRight, int boardCellsX) {
+    int limit = std::min(desiredRight, boardCellsX);
+    const int origRight = orig.x + orig.w;
+
+    for (int j = 0; j < (int)g_state.tiles.size(); ++j) {
+        if (j == idx) continue;
+        const Tile& o = g_state.tiles[j];
+
+        // devono sovrapporsi verticalmente
+        if (!Overlap1D(orig.y, orig.y + orig.h, o.y, o.y + o.h)) continue;
+
+        // consideriamo solo ostacoli alla DESTRA del bordo originale
+        if (o.x >= origRight) {
+            limit = std::min(limit, o.x); // non puoi oltrepassare il left dell'ostacolo
+        }
+    }
+    return limit;
+}
+
+int LimitBottomEdgeCells(int idx, const Tile& orig, int desiredBottom, int boardCellsY) {
+    int limit = std::min(desiredBottom, boardCellsY);
+    const int origBottom = orig.y + orig.h;
+
+    for (int j = 0; j < (int)g_state.tiles.size(); ++j) {
+        if (j == idx) continue;
+        const Tile& o = g_state.tiles[j];
+
+        // devono sovrapporsi orizzontalmente
+        if (!Overlap1D(orig.x, orig.x + orig.w, o.x, o.x + o.w)) continue;
+
+        // ostacoli sotto il bordo originale
+        if (o.y >= origBottom) {
+            limit = std::min(limit, o.y);
+        }
+    }
+    return limit;
+}
+
+int LimitLeftEdgeCells(int idx, const Tile& orig, int desiredLeft) {
+    int limit = std::max(desiredLeft, 0);
+    const int origLeft = orig.x;
+
+    for (int j = 0; j < (int)g_state.tiles.size(); ++j) {
+        if (j == idx) continue;
+        const Tile& o = g_state.tiles[j];
+
+        if (!Overlap1D(orig.y, orig.y + orig.h, o.y, o.y + o.h)) continue;
+
+        const int oRight = o.x + o.w;
+        // ostacoli a sinistra del bordo originale
+        if (oRight <= origLeft) {
+            limit = std::max(limit, oRight); // non puoi entrare: left >= right dell'ostacolo
+        }
+    }
+    return limit;
+}
+
+int LimitTopEdgeCells(int idx, const Tile& orig, int desiredTop) {
+    int limit = std::max(desiredTop, 0);
+    const int origTop = orig.y;
+
+    for (int j = 0; j < (int)g_state.tiles.size(); ++j) {
+        if (j == idx) continue;
+        const Tile& o = g_state.tiles[j];
+
+        if (!Overlap1D(orig.x, orig.x + orig.w, o.x, o.x + o.w)) continue;
+
+        const int oBottom = o.y + o.h;
+        if (oBottom <= origTop) {
+            limit = std::max(limit, oBottom);
+        }
+    }
+    return limit;
+}
 
 void SyncTileTextsFromWindows() {
     for (auto& t : g_state.tiles) {
@@ -545,40 +629,54 @@ LRESULT CALLBACK BoardProc(HWND hwnd, UINT msg, WPARAM wParam, LPARAM lParam) {
             break;
         }
         case WM_MOUSEMOVE: {
-            if (!g_dragging || g_dragTile < 0) break;
+    if (!g_dragging || g_dragTile < 0) break;
 
-            POINT pt{GET_X_LPARAM(lParam), GET_Y_LPARAM(lParam)};
-            int dx = SnapToCells(pt.x - g_dragStart.x);
-            int dy = SnapToCells(pt.y - g_dragStart.y);
-            const POINT bounds = GetBoardCellBounds();
+    POINT pt{GET_X_LPARAM(lParam), GET_Y_LPARAM(lParam)};
+    int dx = SnapToCells(pt.x - g_dragStart.x);
+    int dy = SnapToCells(pt.y - g_dragStart.y);
+    const POINT bounds = GetBoardCellBounds(); // bounds.x / bounds.y in CELLE
 
-            Tile t = g_originalTile;
-            if (g_dragEdge == DragEdge::Right) {
-                const int newRight = std::clamp(g_originalTile.x + g_originalTile.w + dx, g_originalTile.x + 1, static_cast<int>(bounds.x));
-                t.w = newRight - g_originalTile.x;
-            }
-            if (g_dragEdge == DragEdge::Bottom) {
-                const int newBottom = std::clamp(g_originalTile.y + g_originalTile.h + dy, g_originalTile.y + 1, static_cast<int>(bounds.y));
-                t.h = newBottom - g_originalTile.y;
-            }
-            if (g_dragEdge == DragEdge::Left) {
-                const int right = g_originalTile.x + g_originalTile.w;
-                t.x = std::clamp(g_originalTile.x + dx, 0, right - 1);
-                t.w = right - t.x;
-            }
-            if (g_dragEdge == DragEdge::Top) {
-                const int bottom = g_originalTile.y + g_originalTile.h;
-                t.y = std::clamp(g_originalTile.y + dy, 0, bottom - 1);
-                t.h = bottom - t.y;
-            }
+    Tile t = g_originalTile;
 
-            g_state.tiles[g_dragTile].x = t.x;
-            g_state.tiles[g_dragTile].y = t.y;
-            g_state.tiles[g_dragTile].w = t.w;
-            g_state.tiles[g_dragTile].h = t.h;
-            LayoutTiles();
-            break;
-        }
+    const int origLeft   = g_originalTile.x;
+    const int origTop    = g_originalTile.y;
+    const int origRight  = g_originalTile.x + g_originalTile.w;
+    const int origBottom = g_originalTile.y + g_originalTile.h;
+
+    if (g_dragEdge == DragEdge::Right) {
+        int desiredRight = std::clamp(origRight + dx, origLeft + 1, (int)bounds.x);
+        desiredRight = LimitRightEdgeCells(g_dragTile, g_originalTile, desiredRight, bounds.x);
+        t.w = desiredRight - origLeft;
+    }
+
+    if (g_dragEdge == DragEdge::Bottom) {
+        int desiredBottom = std::clamp(origBottom + dy, origTop + 1, (int)bounds.y);
+        desiredBottom = LimitBottomEdgeCells(g_dragTile, g_originalTile, desiredBottom, bounds.y);
+        t.h = desiredBottom - origTop;
+    }
+
+    if (g_dragEdge == DragEdge::Left) {
+        int desiredLeft = std::clamp(origLeft + dx, 0, origRight - 1);
+        desiredLeft = LimitLeftEdgeCells(g_dragTile, g_originalTile, desiredLeft);
+        t.x = desiredLeft;
+        t.w = origRight - t.x;
+    }
+
+    if (g_dragEdge == DragEdge::Top) {
+        int desiredTop = std::clamp(origTop + dy, 0, origBottom - 1);
+        desiredTop = LimitTopEdgeCells(g_dragTile, g_originalTile, desiredTop);
+        t.y = desiredTop;
+        t.h = origBottom - t.y;
+    }
+
+    g_state.tiles[g_dragTile] = t;
+    //g_state.tiles[g_dragTile].x = t.x;
+//g_state.tiles[g_dragTile].y = t.y;
+//g_state.tiles[g_dragTile].w = t.w;
+//g_state.tiles[g_dragTile].h = t.h;
+    LayoutTiles();
+    break;
+}
         case WM_LBUTTONUP:
             if (g_dragging) {
                 g_dragging = false;
@@ -733,7 +831,13 @@ LRESULT CALLBACK MainProc(HWND hwnd, UINT msg, WPARAM wParam, LPARAM lParam) {
                     }
 
                     t.text = text;
-                    SaveState();
+                    // SaveState(); //esoso in termini di risorse:ogni lettera è un i/o
+
+g_savePending = true;
+KillTimer(hwnd, kTimerSaveDebounce);
+SetTimer(hwnd, kTimerSaveDebounce, kSaveDebounceMs, nullptr);
+
+
                     break;
                 }
             }
@@ -775,10 +879,26 @@ LRESULT CALLBACK MainProc(HWND hwnd, UINT msg, WPARAM wParam, LPARAM lParam) {
             }
             PostQuitMessage(0);
             return 0;
+        case WM_TIMER: {
+    if (wParam == kTimerSaveDebounce) {
+        KillTimer(hwnd, kTimerSaveDebounce);
+
+        if (g_savePending) {
+            g_savePending = false;
+            SaveState();
+        }
+        return 0;
+    }
+    break;
+}
     }
 
     return DefWindowProcW(hwnd, msg, wParam, lParam);
 }
+
+
+
+
 
 int WINAPI wWinMain(HINSTANCE hInstance, HINSTANCE, PWSTR, int nCmdShow) {
     SetPriorityClass(GetCurrentProcess(), ABOVE_NORMAL_PRIORITY_CLASS);
