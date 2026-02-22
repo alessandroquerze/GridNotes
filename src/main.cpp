@@ -525,8 +525,15 @@ void LayoutTiles() {
             if (!g_defaultEditProc) {
                 g_defaultEditProc = reinterpret_cast<WNDPROC>(GetWindowLongPtrW(t.edit, GWLP_WNDPROC));
             }
-            SetWindowLongPtrW(t.edit, GWLP_WNDPROC, reinterpret_cast<LONG_PTR>(EditProc));
-            SendMessageW(t.edit, WM_SETFONT, reinterpret_cast<WPARAM>(GetStockObject(DEFAULT_GUI_FONT)), TRUE);
+           SetWindowLongPtrW(t.edit, GWLP_WNDPROC, reinterpret_cast<LONG_PTR>(EditProc));
+
+LOGFONT lf;
+GetObject(GetStockObject(DEFAULT_GUI_FONT), sizeof(lf), &lf);
+lf.lfHeight *= 1.6; // font doppio
+
+HFONT bigFont = CreateFontIndirect(&lf);
+
+SendMessageW(t.edit, WM_SETFONT, (WPARAM)bigFont, TRUE);
         }
 
         const int inset = kEditPadding + (g_state.editLayout ? kResizeHandlePx : 0);
@@ -736,11 +743,53 @@ LRESULT CALLBACK BoardProc(HWND hwnd, UINT msg, WPARAM wParam, LPARAM lParam) {
 
 LRESULT CALLBACK MainProc(HWND hwnd, UINT msg, WPARAM wParam, LPARAM lParam) {
     switch (msg) {
+        case WM_DRAWITEM:
+{
+    auto* dis = (DRAWITEMSTRUCT*)lParam;
+    HWND hCheck = dis->hwndItem;
+    if (hCheck!= g_editToggle&&hCheck!= g_startupToggle) break;
+
+    // scegli brush in base allo stato
+    HBRUSH bg = g_state.editLayout
+        ? CreateSolidBrush(RGB(0, 0, 0))   // ON
+        : CreateSolidBrush(RGB(60, 60, 60)); // OFF
+
+    FillRect(dis->hDC, &dis->rcItem, bg);
+    DeleteObject(bg);
+
+    // bordo semplice
+    FrameRect(dis->hDC, &dis->rcItem, (HBRUSH)GetStockObject(BLACK_BRUSH));
+
+    // testo
+    SetBkMode(dis->hDC, TRANSPARENT);
+    SetTextColor(dis->hDC, RGB(235, 235, 235));
+     const wchar_t* txt;
+if(hCheck== g_editToggle){
+    //printf("edit");
+    txt = g_state.editLayout ? L"Edit layout: ON" : L"Edit layout: OFF";
+
+}
+else if(hCheck== g_startupToggle){
+     txt = g_state.startWithWindows ? L"Start with Windows: ON" : L"Start with Windows: OFF";
+
+}
+    RECT r = dis->rcItem;
+    DrawTextW(dis->hDC, txt, -1, &r, DT_CENTER | DT_VCENTER | DT_SINGLELINE);
+
+    // focus (opzionale)
+    if (dis->itemState & ODS_FOCUS) {
+        RECT fr = dis->rcItem;
+        InflateRect(&fr, -3, -3);
+        DrawFocusRect(dis->hDC, &fr);
+    }
+
+    return TRUE;
+}
         case WM_CREATE: {
             g_editBgBrush = CreateSolidBrush(RGB(TILE_COLOR, TILE_COLOR, TILE_COLOR));
             g_toolbarBgBrush = CreateSolidBrush(RGB(TILE_COLOR, TILE_COLOR, TILE_COLOR));
-
-            g_editToggle = CreateWindowW(
+            
+            /*g_editToggle = CreateWindowW(
                 L"BUTTON",
                 L"Edit layout",
                 WS_CHILD | WS_VISIBLE | BS_PUSHLIKE | BS_AUTOCHECKBOX,
@@ -751,27 +800,47 @@ LRESULT CALLBACK MainProc(HWND hwnd, UINT msg, WPARAM wParam, LPARAM lParam) {
                 hwnd,
                 reinterpret_cast<HMENU>(kCmdEditLayout),
                 GetModuleHandleW(nullptr),
-                nullptr);
+                nullptr);*/
 
+                g_editToggle = CreateWindowW(
+                    L"BUTTON",
+                    L"", // lo disegni tu
+                    WS_CHILD | WS_VISIBLE | BS_OWNERDRAW,
+                    12, 8, 140, 22,
+                    hwnd,
+                    (HMENU)kCmdEditLayout,
+                    GetModuleHandleW(nullptr),
+                    nullptr);
             // Make the "Edit layout" button behave like a toggle (pressed when active)
-            SendMessageW(g_editToggle, BM_SETCHECK, g_state.editLayout ? BST_CHECKED : BST_UNCHECKED, 0);
-            SetWindowTextW(g_editToggle, g_state.editLayout ? L"Edit layout: ON" : L"Edit layout: OFF");
+           // SendMessageW(g_editToggle, BM_SETCHECK, g_state.editLayout ? BST_CHECKED : BST_UNCHECKED, 0);
+            //SetWindowTextW(g_editToggle, g_state.editLayout ? L"Edit layout: ON" : L"Edit layout: OFF");
 
-            g_startupToggle = CreateWindowW(
+            /*g_startupToggle = CreateWindowW(
                 L"BUTTON",
                 L"Start with Windows",
                 WS_CHILD | WS_VISIBLE | BS_AUTOCHECKBOX,
-                150,
+                160,
                 8,
                 170,
                 22,
                 hwnd,
                 reinterpret_cast<HMENU>(kCmdStartup),
                 GetModuleHandleW(nullptr),
-                nullptr);
-            SetWindowTextW(g_editToggle, g_state.editLayout ? L"Edit layout ON" : L"Edit layout OFF");
-            SendMessageW(g_startupToggle, BM_SETCHECK, g_state.startWithWindows ? BST_CHECKED : BST_UNCHECKED, 0);
-
+                nullptr);*/
+ //errore di copia di chatgpt lol           SetWindowTextW(g_editToggle, g_state.editLayout ? L"Edit layout ON" : L"Edit layout OFF");
+           // SendMessageW(g_startupToggle, BM_SETCHECK, g_state.startWithWindows ? BST_CHECKED : BST_UNCHECKED, 0);
+  g_startupToggle = CreateWindowW(
+                    L"BUTTON",
+                    L"", // lo disegni tu
+                    WS_CHILD | WS_VISIBLE | BS_OWNERDRAW,
+                    160,
+                8,
+            240,
+                22,
+                    hwnd,
+                    (HMENU)kCmdStartup,
+                    GetModuleHandleW(nullptr),
+                    nullptr);
             WNDCLASSW wc{};
             wc.lpfnWndProc = BoardProc;
             wc.hInstance = GetModuleHandleW(nullptr);
@@ -790,8 +859,20 @@ LRESULT CALLBACK MainProc(HWND hwnd, UINT msg, WPARAM wParam, LPARAM lParam) {
             return 0;
         }
         case WM_COMMAND: {
-            if (LOWORD(wParam) == kCmdEditLayout && HIWORD(wParam) == BN_CLICKED) {
+            if (LOWORD(wParam) == kCmdEditLayout /* && HIWORD(wParam) == BN_CLICKED */) {
+    g_state.editLayout = !g_state.editLayout;
+
+    LayoutTiles();
+    SaveState();
+
+    InvalidateRect(g_editToggle, nullptr, TRUE); // ridisegna il bottone owner-draw
+    InvalidateRect(g_board, nullptr, TRUE);
+    UpdateWindow(g_board);
+    return 0;
+}
+            /* if (LOWORD(wParam) == kCmdEditLayout && HIWORD(wParam) == BN_CLICKED) {
                 // Button is BS_AUTOCHECKBOX|BS_PUSHLIKE: Windows toggles the check state for us.
+
                 const LRESULT checked = SendMessageW(g_editToggle, BM_GETCHECK, 0, 0);
                 g_state.editLayout = (checked == BST_CHECKED);
                 SetWindowTextW(g_editToggle, g_state.editLayout ? L"Edit layout: ON" : L"Edit layout: OFF");
@@ -801,14 +882,26 @@ LRESULT CALLBACK MainProc(HWND hwnd, UINT msg, WPARAM wParam, LPARAM lParam) {
                 InvalidateRect(g_board, nullptr, TRUE);
                 UpdateWindow(g_board);
                 return 0;
-            }
-            if (LOWORD(wParam) == kCmdStartup && HIWORD(wParam) == BN_CLICKED) {
+            }*/
+           if (LOWORD(wParam) == kCmdStartup /*&& HIWORD(wParam) == BN_CLICKED */) {
+    g_state.startWithWindows = !g_state.startWithWindows;
+
+    // (opzionale ma consigliato) allinea lo stato "checked" del controllo //non ho capito a che serve
+    //SendMessageW(g_startupToggle, BM_SETCHECK,g_state.startWithWindows ? BST_CHECKED : BST_UNCHECKED, 0);
+
+    SetStartup(g_state.startWithWindows);
+    SaveState();
+
+    InvalidateRect(g_startupToggle, nullptr, TRUE); // ridisegna owner-draw
+    return 0;
+}
+        /*    if (LOWORD(wParam) == kCmdStartup && HIWORD(wParam) == BN_CLICKED) {
                 g_state.startWithWindows = (SendMessageW(g_startupToggle, BM_GETCHECK, 0, 0) == BST_CHECKED);
                 SetStartup(g_state.startWithWindows);
                 SaveState();
                 return 0;
             }
-
+*/
             if (HIWORD(wParam) == EN_CHANGE) {
                 if (g_internalTextSet) return 0;
 
@@ -847,6 +940,7 @@ SetTimer(hwnd, kTimerSaveDebounce, kSaveDebounceMs, nullptr);
         case WM_CTLCOLORSTATIC: {
             HDC hdc = reinterpret_cast<HDC>(wParam);
             SetTextColor(hdc, RGB(235, 235, 235));
+            
             SetBkMode(hdc, TRANSPARENT);
             return reinterpret_cast<LRESULT>(g_toolbarBgBrush);
         }
