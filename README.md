@@ -1,4 +1,4 @@
-progetto con win32 + EDIT (no richedit)
+progetto con win32 + EDIT (no richedit).
 
 
 
@@ -13,3 +13,6 @@ g++ -std=c++20 -municode -mwindows -O2 -o GridNotes.exe src/main.cpp src/startup
 se con registro run:
 
 g++ -std=c++20 -municode -mwindows -O2 -o GridNotes.exe src/main.cpp -ladvapi32 -lshell32 -lcomctl32 -lgdi32 -luser32
+
+
+esiste la versione iniziale creata in .NET con c#, non indicata perché molto piu lenta
