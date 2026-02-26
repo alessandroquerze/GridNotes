@@ -1,4 +1,4 @@
-progetto con win32 + EDIT (no richedit).
+progetto con win32 + EDIT (no richedit). creato in 1 giorno tramite AI, sia la versione in .NET che la successiva versione in C++ costruita da una riscrittura automatica del codice
 
 
 

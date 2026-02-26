@@ -525,8 +525,8 @@ static void DoCtrlBackspace(HWND hEdit)
     }
 
     // 3) (facoltativo ma tipico) cancella anche gli spazi subito PRIMA della parola
-    // (questa riga rende l'effetto più "aggressivo"; se non lo vuoi, commentala)
-    while (i > 0 && std::iswspace((wint_t)text[i - 1])) i--;
+    
+    //while (i > 0 && std::iswspace((wint_t)text[i - 1])) i--;
 
     // Cancella [i, start)
         SendMessageW(hEdit, WM_SETREDRAW, FALSE, 0);
